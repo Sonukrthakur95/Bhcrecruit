@@ -1,0 +1,109 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required)
+    //   - role: string (required, 'admin' or 'recruiter')
+    //   - displayName: string
+    //
+    // Collection: candidates
+    // Document ID: {candidateId}
+    // Fields:
+    //   - recruiterUid: string (required)
+    //   - candidateName: string (required)
+    //   - candidateEmail: string (required)
+    //   - status: string (required)
+    //   ... other fields
+    //
+    // Collection: dailyLeads
+    // Document ID: {leadId}
+    // Fields:
+    //   - recruiterUid: string (required)
+    //   - candidateName: string (required)
+    //   ... other fields
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.email == "sonukrthakur93@gmail.com" && request.auth.token.email_verified == true ||
+         exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function isValidCandidate(data) {
+      return data.candidateName is string && data.candidateName.size() > 0 && data.candidateName.size() < 100 &&
+             data.candidateEmail is string && data.candidateEmail.size() < 100 &&
+             data.status in ["Submitted", "Screening", "Interview Round 1", "Interview Round 2", "Client Round", "Offered", "Joined", "Rejected"];
+    }
+
+    function isValidUser(data) {
+      return data.uid is string && data.uid == request.auth.uid &&
+             data.email is string && data.role in ['admin', 'recruiter'];
+    }
+
+    function isValidDailyLead(data) {
+      return data.candidateName is string && data.candidateName.size() > 0 &&
+             data.recruiterUid == request.auth.uid;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(userId) && (request.resource.data.role == 'recruiter' || isAdmin());
+      allow update: if isAuthenticated() && isOwner(userId) && (request.resource.data.role == resource.data.role || isAdmin());
+    }
+
+    match /user_roles/{email} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /candidates/{candidateId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid);
+      allow create: if isAuthenticated() && isValidCandidate(request.resource.data) && (request.resource.data.recruiterUid == request.auth.uid || isAdmin());
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid && isValidCandidate(request.resource.data) && request.resource.data.recruiterUid == resource.data.recruiterUid);
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid);
+    }
+
+    match /dailyLeads/{leadId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid);
+      allow create: if isAuthenticated() && isValidDailyLead(request.resource.data);
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid && isValidDailyLead(request.resource.data));
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid);
+    }
+
+    // Support for snake_case if used in some parts of the app
+    match /daily_leads/{leadId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid);
+      allow create: if isAuthenticated() && isValidDailyLead(request.resource.data);
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid && isValidDailyLead(request.resource.data));
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid);
+    }
+  }
+}

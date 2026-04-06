@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "Candidate": {
+      "title": "Candidate",
+      "description": "A candidate in the recruitment pipeline",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "recruiterName": { "type": "string" },
+        "recruiterUid": { "type": "string" },
+        "roleName": { "type": "string" },
+        "clientName": { "type": "string" },
+        "candidateName": { "type": "string" },
+        "candidateEmail": { "type": "string", "format": "email" },
+        "candidatePhone": { "type": "string" },
+        "status": { 
+          "type": "string", 
+          "enum": ["Submitted", "Screening", "Interview Round 1", "Interview Round 2", "Client Round", "Offered", "Joined", "Rejected"] 
+        },
+        "stageUpdatedDate": { "type": "string" },
+        "source": { "type": "string" },
+        "priority": { "type": "string", "enum": ["Low", "Medium", "High"] },
+        "followUpDate": { "type": "string" },
+        "remarks": { "type": "string" },
+        "skill": { "type": "string" },
+        "experience": { "type": "string" },
+        "noticePeriod": { "type": "string" },
+        "comments": { "type": "string" },
+        "resumeUrl": { "type": "string", "format": "uri" },
+        "positionId": { "type": "string" }
+      },
+      "required": ["candidateName", "candidateEmail", "status", "recruiterName", "recruiterUid"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "A user's profile and role",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin", "recruiter"] },
+        "displayName": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "DailyLead": {
+      "title": "Daily Lead",
+      "description": "Daily candidate lead submission",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "recruiterUid": { "type": "string" },
+        "recruiterName": { "type": "string" },
+        "candidateName": { "type": "string" },
+        "candidateEmail": { "type": "string", "format": "email" },
+        "candidatePhone": { "type": "string" },
+        "roleName": { "type": "string" },
+        "clientName": { "type": "string" },
+        "source": { "type": "string" },
+        "remarks": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["recruiterUid", "candidateName", "date"]
+    }
+  },
+  "firestore": {
+    "/candidates/{candidateId}": {
+      "schema": "Candidate",
+      "description": "Collection of all candidates"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile information"
+    },
+    "/dailyLeads/{leadId}": {
+      "schema": "DailyLead",
+      "description": "Daily lead submissions"
+    }
+  }
+}

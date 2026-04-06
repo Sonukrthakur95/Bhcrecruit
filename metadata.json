@@ -1,0 +1,5 @@
+{
+  "name": "BHC Recruit ATS",
+  "description": "A secure, role-based Applicant Tracking System for recruitment firms, using Google Sheets as a backend.",
+  "requestFramePermissions": []
+}
