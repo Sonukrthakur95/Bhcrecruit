@@ -25,7 +25,7 @@ import {
   Square
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
-import { cn } from "../lib/utils";
+import { cn, safeFormat } from "../lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 
 export function CandidateList() {
@@ -296,109 +296,110 @@ export function CandidateList() {
                   </td>
                 </tr>
               ) : (
-                <AnimatePresence mode="popLayout">
-                  {filteredData.map((c) => (
-                    <React.Fragment key={c.id}>
-                      <motion.tr 
-                        layout
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className={cn(
-                          "hover:bg-slate-50 transition-colors group cursor-pointer",
-                          expandedId === c.id && "bg-blue-50/30",
-                          c.isExternal && "border-l-4 border-l-emerald-500"
-                        )}
-                        onClick={() => toggleExpand(c.id)}
-                      >
-                        <td className="px-6 py-4">
-                          {!c.isExternal && (
-                            <button
-                              onClick={(e) => toggleSelect(e, c.id)}
-                              className="p-1 hover:bg-white rounded transition-colors"
-                            >
-                              {selectedIds.has(c.id) ? (
-                                <CheckSquare className="w-4 h-4 text-blue-600" />
-                              ) : (
-                                <Square className="w-4 h-4 text-slate-400" />
-                              )}
-                            </button>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          {expandedId === c.id ? <ChevronDown className="w-4 h-4 text-blue-600" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-col">
-                            <span className="font-semibold text-slate-900">{c.candidateName}</span>
-                            {c.candidateEmail && (
-                              <div className="flex items-center gap-3 mt-1">
-                                <span className="flex items-center gap-1 text-xs text-slate-500"><Mail className="w-3 h-3" /> {c.candidateEmail}</span>
-                                <span className="flex items-center gap-1 text-xs text-slate-500"><Phone className="w-3 h-3" /> {c.candidatePhone}</span>
-                              </div>
-                            )}
-                            {c.isExternal && <span className="text-xs text-emerald-600 font-medium mt-1 flex items-center gap-1"><Globe className="w-3 h-3" /> External Job Board</span>}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium text-slate-700">{c.roleName}</span>
-                            <span className="text-xs text-slate-500">{c.clientName}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          {c.isExternal ? (
-                            <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-700">Open</span>
-                          ) : (
-                            <select
-                              value={c.status}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => handleStatusChange(c, e.target.value)}
-                              className={cn(
-                                "text-xs font-bold px-3 py-1 rounded-full border-none outline-none cursor-pointer",
-                                getStatusColor(c.status)
-                              )}
-                            >
-                              {STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                            </select>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={cn(
-                            "text-xs font-medium px-2 py-1 rounded",
-                            c.isExternal ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"
-                          )}>
-                            {c.isExternal ? "External" : "Internal"}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2 text-sm text-slate-600">
-                            <Calendar className="w-4 h-4 text-slate-400" />
-                            {format(parseISO(c.followUpDate), "MMM d, yyyy")}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          {!c.isExternal && (
-                            <button 
-                              onClick={(e) => handleDeleteCandidate(e, c.id)}
-                              className="p-2 hover:bg-red-50 rounded-lg transition-colors text-slate-400 hover:text-red-600"
-                              title="Delete Candidate"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </td>
-                      </motion.tr>
-                      
-                      {/* Expanded Details */}
-                      <AnimatePresence>
-                        {expandedId === c.id && (
-                          <motion.tr
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="bg-slate-50/50"
+                <AnimatePresence>
+                  {filteredData.flatMap((c) => [
+                    <motion.tr 
+                      key={c.id}
+                      layout
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className={cn(
+                        "hover:bg-slate-50 transition-colors group cursor-pointer",
+                        expandedId === c.id && "bg-blue-50/30",
+                        c.isExternal && "border-l-4 border-l-emerald-500"
+                      )}
+                      onClick={() => toggleExpand(c.id)}
+                    >
+                      <td className="px-6 py-4">
+                        {!c.isExternal && (
+                          <button
+                            onClick={(e) => toggleSelect(e, c.id)}
+                            className="p-1 hover:bg-white rounded transition-colors"
                           >
+                            {selectedIds.has(c.id) ? (
+                              <CheckSquare className="w-4 h-4 text-blue-600" />
+                            ) : (
+                              <Square className="w-4 h-4 text-slate-400" />
+                            )}
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        {expandedId === c.id ? <ChevronDown className="w-4 h-4 text-blue-600" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-slate-900">{c.candidateName}</span>
+                          {c.candidateEmail && (
+                            <div className="flex items-center gap-3 mt-1">
+                              <span className="flex items-center gap-1 text-xs text-slate-500"><Mail className="w-3 h-3" /> {c.candidateEmail}</span>
+                              <span className="flex items-center gap-1 text-xs text-slate-500"><Phone className="w-3 h-3" /> {c.candidatePhone}</span>
+                            </div>
+                          )}
+                          {c.isExternal && <span className="text-xs text-emerald-600 font-medium mt-1 flex items-center gap-1"><Globe className="w-3 h-3" /> External Job Board</span>}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-slate-700">{c.roleName}</span>
+                          <span className="text-xs text-slate-500">{c.clientName}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {c.isExternal ? (
+                          <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-700">Open</span>
+                        ) : (
+                          <select
+                            value={c.status}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => handleStatusChange(c, e.target.value)}
+                            className={cn(
+                              "text-xs font-bold px-3 py-1 rounded-full border-none outline-none cursor-pointer",
+                              getStatusColor(c.status)
+                            )}
+                          >
+                            {STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          </select>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={cn(
+                          "text-xs font-medium px-2 py-1 rounded",
+                          c.isExternal ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"
+                        )}>
+                          {c.isExternal ? "External" : "Internal"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2 text-sm text-slate-600">
+                          <Calendar className="w-4 h-4 text-slate-400" />
+                          {safeFormat(c.followUpDate)}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {!c.isExternal && (
+                          <button 
+                            onClick={(e) => handleDeleteCandidate(e, c.id)}
+                            className="p-2 hover:bg-red-50 rounded-lg transition-colors text-slate-400 hover:text-red-600"
+                            title="Delete Candidate"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </td>
+                    </motion.tr>,
+                    
+                    /* Expanded Details */
+                    <AnimatePresence key={`${c.id}-expanded-presence`}>
+                      {expandedId === c.id && (
+                        <motion.tr
+                          key={`${c.id}-expanded-row`}
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="bg-slate-50/50"
+                        >
                             <td colSpan={7} className="px-12 py-6">
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                                 <div className="space-y-3">
@@ -471,8 +472,8 @@ export function CandidateList() {
                           </motion.tr>
                         )}
                       </AnimatePresence>
-                    </React.Fragment>
-                  ))}
+                    ]
+                  )}
                 </AnimatePresence>
               )}
             </tbody>

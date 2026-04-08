@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Sparkles, 
@@ -18,6 +18,8 @@ import {
 import { cn } from "../lib/utils";
 import { useAuth } from "../AuthContext";
 import { importCsvData } from "../lib/importCsv";
+import { addCandidate } from "../lib/api";
+import { format } from "date-fns";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -33,6 +35,7 @@ export function RecruiterTools() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ success: number; skipped: number; failed: number } | null>(null);
   const [error, setError] = useState("");
+
 
   const handleImport = async () => {
     if (!csvText || !profile) return;
@@ -79,6 +82,7 @@ ${jd}`,
     }
   };
 
+
   const recruitmentTips = [
     {
       title: "The 24-Hour Rule",
@@ -118,11 +122,11 @@ ${jd}`,
           <p className="text-slate-500">AI-powered tools to help you find and hire the best talent</p>
         </div>
         
-        <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
+        <div className="flex bg-slate-100 p-1 rounded-xl w-fit overflow-x-auto">
           <button
             onClick={() => setActiveTab("analyzer")}
             className={cn(
-              "px-4 py-2 rounded-lg text-sm font-medium transition-all",
+              "px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap",
               activeTab === "analyzer" ? "bg-white text-[#002B5B] shadow-sm" : "text-slate-500 hover:text-slate-900"
             )}
           >
@@ -131,7 +135,7 @@ ${jd}`,
           <button
             onClick={() => setActiveTab("tips")}
             className={cn(
-              "px-4 py-2 rounded-lg text-sm font-medium transition-all",
+              "px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap",
               activeTab === "tips" ? "bg-white text-[#002B5B] shadow-sm" : "text-slate-500 hover:text-slate-900"
             )}
           >
@@ -141,7 +145,7 @@ ${jd}`,
             <button
               onClick={() => setActiveTab("import")}
               className={cn(
-                "px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                "px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap",
                 activeTab === "import" ? "bg-white text-[#002B5B] shadow-sm" : "text-slate-500 hover:text-slate-900"
               )}
             >

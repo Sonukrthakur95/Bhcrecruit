@@ -5,15 +5,18 @@ import { Login } from "./components/Login";
 import { Dashboard } from "./components/Dashboard";
 import { CandidateForm } from "./components/CandidateForm";
 import { CandidateList } from "./components/CandidateList";
+import { CandidatePipeline } from "./components/CandidatePipeline";
 import { RecruiterTools } from "./components/RecruiterTools";
 import { UserManagement } from "./components/UserManagement";
 import { DailyLeadsForm } from "./components/DailyLeadsForm";
 import { DailyLeadsDashboard } from "./components/DailyLeadsDashboard";
+import { AIRecruitFlow } from "./components/AIRecruitFlow";
 import { ConfigAlert } from "./components/ConfigAlert";
 import { 
   LayoutDashboard, 
   UserPlus, 
   ListTodo, 
+  Layout,
   Settings, 
   LogOut, 
   Menu, 
@@ -22,7 +25,8 @@ import {
   Sparkles,
   Users,
   ClipboardList,
-  BarChart2
+  BarChart2,
+  Wand2
 } from "lucide-react";
 import { auth } from "./firebase";
 import { signOut } from "firebase/auth";
@@ -35,14 +39,18 @@ function Sidebar() {
 
   const navItems = [
     { label: "Dashboard", path: "/", icon: LayoutDashboard },
+    { label: "AI Recruit Flow", path: "/recruit-flow", icon: Sparkles },
     { label: "Add Candidate", path: "/add", icon: UserPlus },
+    { label: "Pipeline", path: "/pipeline", icon: Layout },
     { label: profile?.role === "admin" ? "All Submissions" : "My Submissions", path: "/list", icon: ListTodo },
-    { label: "Recruiter Tools", path: "/tools", icon: Sparkles },
+    { label: "Recruiter Tools", path: "/tools", icon: Wand2 },
+    ...(profile?.role === "recruiter" || profile?.role === "admin" ? [
+      { label: "Leads Analytics", path: "/leads/dashboard", icon: BarChart2 }
+    ] : []),
     ...(profile?.role === "recruiter" ? [
       { label: "Daily Leads Log", path: "/leads/add", icon: ClipboardList }
     ] : []),
     ...(profile?.role === "admin" ? [
-      { label: "Leads Analytics", path: "/leads/dashboard", icon: BarChart2 },
       { label: "User Management", path: "/users", icon: Users }
     ] : []),
   ];
@@ -117,29 +125,6 @@ function Sidebar() {
   );
 }
 
-function Greeting() {
-  const { profile } = useAuth();
-  const quotes = [
-    "The only way to do great work is to love what you do.",
-    "Believe you can and you're halfway there.",
-    "Don't watch the clock; do what it does. Keep going.",
-    "Success is not final, failure is not fatal: it is the courage to continue that counts.",
-    "Your attitude determines how well you do it."
-  ];
-  const [quote] = React.useState(() => quotes[Math.floor(Math.random() * quotes.length)]);
-
-  return (
-    <div className="mb-8 animate-in fade-in slide-in-from-top-4 duration-700">
-      <h1 className="text-2xl font-bold text-slate-900">
-        Hello, {profile?.displayName}! 👋
-      </h1>
-      <p className="text-slate-500 italic mt-1 text-sm">
-        "{quote}"
-      </p>
-    </div>
-  );
-}
-
 function AppContent() {
   const { user, profile, loading } = useAuth();
 
@@ -160,11 +145,11 @@ function AppContent() {
     <div className="min-h-screen bg-slate-50 lg:pl-64">
       <Sidebar />
       <main className="p-4 md:p-8 max-w-7xl mx-auto">
-        <Greeting />
-        <ConfigAlert />
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/recruit-flow" element={<AIRecruitFlow />} />
           <Route path="/add" element={<CandidateForm />} />
+          <Route path="/pipeline" element={<CandidatePipeline />} />
           <Route path="/list" element={<CandidateList />} />
           <Route path="/tools" element={<RecruiterTools />} />
           <Route path="/leads/add" element={<DailyLeadsForm />} />

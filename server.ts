@@ -56,10 +56,17 @@ async function startServer() {
         throw new Error(`External API returned ${response.status}`);
       }
       
-      // If it's a GET, we expect JSON. If it's a POST with no-cors, we might not get much back.
+      // If it's a GET, we expect JSON.
       if (req.method === "GET") {
-        const data = await response.json();
-        res.json(data);
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await response.json();
+          res.json(data);
+        } else {
+          const text = await response.text();
+          console.error("External API returned non-JSON response:", text.substring(0, 200));
+          throw new Error("External API returned an invalid response format (expected JSON)");
+        }
       } else {
         res.json({ success: true });
       }

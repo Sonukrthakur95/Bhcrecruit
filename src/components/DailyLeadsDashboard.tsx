@@ -49,17 +49,9 @@ export function DailyLeadsDashboard() {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    let q = query(collection(db, "dailyLeads"), orderBy("createdAt", "desc"));
+    // All authenticated users can now see all leads
+    const q = query(collection(db, "dailyLeads"), orderBy("createdAt", "desc"));
     
-    // If recruiter, only fetch their own leads
-    if (profile?.role === "recruiter") {
-      q = query(
-        collection(db, "dailyLeads"), 
-        where("recruiterUid", "==", profile.uid),
-        orderBy("createdAt", "desc")
-      );
-    }
-
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DailyLead));
       setLeads(data);
@@ -88,9 +80,11 @@ export function DailyLeadsDashboard() {
   // Filtered data
   const filteredLeads = leads.filter(l => {
     const matchesDate = l.date === filterDate;
-    const matchesRecruiter = !isAdmin || selectedRecruiter === "All" || l.recruiterName === selectedRecruiter;
+    const matchesRecruiter = selectedRecruiter === "All" || l.recruiterName === selectedRecruiter;
     return matchesDate && matchesRecruiter;
   });
+
+  const selectableLeads = filteredLeads.filter(l => isAdmin || l.recruiterUid === profile?.uid);
   
   // Aggregate data for chart (by recruiter for the selected date)
   const chartLeads = leads.filter(l => l.date === filterDate);
@@ -144,7 +138,8 @@ export function DailyLeadsDashboard() {
     }
   };
 
-  const toggleSelect = (id: string) => {
+  const toggleSelect = (id: string, leadRecruiterUid: string) => {
+    if (!isAdmin && leadRecruiterUid !== profile?.uid) return;
     const next = new Set(selectedIds);
     if (next.has(id)) {
       next.delete(id);
@@ -155,10 +150,10 @@ export function DailyLeadsDashboard() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === filteredLeads.length && filteredLeads.length > 0) {
+    if (selectedIds.size === selectableLeads.length && selectableLeads.length > 0) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filteredLeads.map(l => l.id!)));
+      setSelectedIds(new Set(selectableLeads.map(l => l.id!)));
     }
   };
 
@@ -195,7 +190,7 @@ export function DailyLeadsDashboard() {
             />
           </div>
 
-          {isAdmin && (
+          {(isAdmin || true) && (
             <div className="flex items-center gap-3 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
               <Filter className="w-4 h-4 text-slate-400 ml-2" />
               <select
@@ -303,12 +298,12 @@ export function DailyLeadsDashboard() {
                 <ClipboardList className="w-5 h-5 text-[#002B5B]" />
                 Detailed Lead Report
               </h2>
-              {filteredLeads.length > 0 && (
+              {selectableLeads.length > 0 && (
                 <button 
                   onClick={toggleSelectAll}
                   className="text-[10px] font-bold text-blue-600 uppercase tracking-widest hover:underline"
                 >
-                  {selectedIds.size === filteredLeads.length ? "Deselect All" : "Select All"}
+                  {selectedIds.size === selectableLeads.length ? "Deselect All" : "Select All"}
                 </button>
               )}
             </div>
@@ -327,7 +322,7 @@ export function DailyLeadsDashboard() {
                     ? "border-blue-200 bg-blue-50/50 shadow-md" 
                     : "border-slate-50 bg-slate-50/30 hover:bg-white hover:shadow-lg hover:shadow-slate-200/50"
                 )}
-                onClick={() => toggleSelect(lead.id!)}
+                onClick={() => toggleSelect(lead.id!, lead.recruiterUid)}
               >
                 <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                   <div className="space-y-3">
@@ -377,18 +372,22 @@ export function DailyLeadsDashboard() {
                       </div>
                     )}
                     <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={() => setEditingLead(lead)}
-                        className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteLead(lead.id!)}
-                        className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {(isAdmin || lead.recruiterUid === profile?.uid) && (
+                        <>
+                          <button 
+                            onClick={() => setEditingLead(lead)}
+                            className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteLead(lead.id!)}
+                            className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -45,7 +45,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && 
-        (request.auth.token.email == "sonukrthakur93@gmail.com" && request.auth.token.email_verified == true ||
+        ((request.auth.token.email == "sonukrthakur93@gmail.com" || request.auth.token.email == "sonu@bullhornconsultants.com") && request.auth.token.email_verified == true ||
          exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
 
@@ -92,7 +92,7 @@ service cloud.firestore {
     }
 
     match /dailyLeads/{leadId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid);
+      allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidDailyLead(request.resource.data);
       allow update: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid && isValidDailyLead(request.resource.data));
       allow delete: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid);
@@ -100,7 +100,7 @@ service cloud.firestore {
 
     // Support for snake_case if used in some parts of the app
     match /daily_leads/{leadId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid);
+      allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidDailyLead(request.resource.data);
       allow update: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid && isValidDailyLead(request.resource.data));
       allow delete: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid);

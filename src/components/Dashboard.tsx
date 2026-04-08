@@ -26,7 +26,31 @@ import {
 import { differenceInDays, parseISO } from "date-fns";
 import confetti from "canvas-confetti";
 import { AdminAISearch } from "./AdminAISearch";
+import { ConfigAlert } from "./ConfigAlert";
 import { motion, AnimatePresence } from "motion/react";
+
+function Greeting() {
+  const { profile } = useAuth();
+  const quotes = [
+    "The only way to do great work is to love what you do.",
+    "Believe you can and you're halfway there.",
+    "Don't watch the clock; do what it does. Keep going.",
+    "Success is not final, failure is not fatal: it is the courage to continue that counts.",
+    "Your attitude determines how well you do it."
+  ];
+  const [quote] = React.useState(() => quotes[Math.floor(Math.random() * quotes.length)]);
+
+  return (
+    <div className="mb-8 animate-in fade-in slide-in-from-top-4 duration-700">
+      <h1 className="text-2xl font-bold text-slate-900">
+        Hello, {profile?.displayName}! 👋
+      </h1>
+      <p className="text-slate-500 italic mt-1 text-sm">
+        "{quote}"
+      </p>
+    </div>
+  );
+}
 
 export function Dashboard() {
   const { profile } = useAuth();
@@ -111,6 +135,9 @@ export function Dashboard() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
+      <Greeting />
+      <ConfigAlert />
+      
       <AnimatePresence>
         {showCelebration && (
           <motion.div
