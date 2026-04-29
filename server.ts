@@ -41,6 +41,7 @@ async function startServer() {
       googleSheetId: !!process.env.GOOGLE_SHEET_ID,
       googleServiceAccountEmail: !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
       googlePrivateKey: !!process.env.GOOGLE_PRIVATE_KEY,
+      contactOutToken: !!process.env.CONTACTOUT_API_TOKEN,
     });
   });
 
@@ -76,6 +77,47 @@ async function startServer() {
     }
   });
 
+  // ContactOut Proxy
+  app.get("/api/contactout/find", async (req, res) => {
+    try {
+      const { profile } = req.query;
+      const token = process.env.CONTACTOUT_API_TOKEN;
+
+      if (!token) {
+        return res.status(400).json({ error: "ContactOut API token is not configured." });
+      }
+
+      if (!profile) {
+        return res.status(400).json({ error: "LinkedIn profile URL is required." });
+      }
+
+      const response = await fetch(`https://api.contactout.com/v1/email/find?profile=${encodeURIComponent(profile as string)}`, {
+        headers: {
+          "token": token
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("ContactOut API error:", errorText);
+        let errorMessage = "Failed to fetch contact info from ContactOut.";
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.message || errorJson.error || errorMessage;
+        } catch (e) {
+          // Not JSON
+        }
+        return res.status(response.status).json({ error: errorMessage });
+      }
+
+      const data = await response.json();
+      res.json(data);
+    } catch (error: any) {
+      console.error("Error in ContactOut proxy:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // API Routes for Candidates
   app.get("/api/candidates", async (req, res) => {
     try {
@@ -90,29 +132,39 @@ async function startServer() {
       });
 
       const rows = response.data.values || [];
-      const candidates = rows.map((row, index) => ({
-        id: (index + 2).toString(), // Row number in sheet as string ID
-        date: row[0] || "",
-        clientName: row[1] || "",
-        skill: row[2] || "",
-        remarks: row[3] || "",
-        positionId: row[4] || "",
-        candidateName: row[5] || "",
-        candidatePhone: row[6] || "",
-        candidateEmail: row[7] || "",
-        experience: row[8] || "",
-        noticePeriod: row[9] || "",
-        status: row[10] || "Submitted",
-        comments: row[11] || "",
-        recruiterName: row[12] || "",
-        roleName: row[13] || "",
-        stageUpdatedDate: row[14] || "",
-        source: row[15] || "",
-        priority: row[16] || "Medium",
-        followUpDate: row[17] || "",
-      }));
+        const candidates = rows.map((row, index) => ({
+          id: (index + 2).toString(),
+          date: row[0] || "",
+          clientName: row[1] || "",
+          skill: row[2] || "",
+          remarks: row[3] || "",
+          positionId: row[4] || "",
+          candidateName: row[5] || "",
+          candidatePhone: row[6] || "",
+          candidateEmail: row[7] || "",
+          experience: row[8] || "",
+          noticePeriod: row[9] || "",
+          status: row[10] || "Submitted",
+          comments: row[11] || "",
+          recruiterName: row[12] || "",
+          roleName: row[13] || "",
+          stageUpdatedDate: row[14] || "",
+          source: row[15] || "",
+          priority: row[16] || "Medium",
+          followUpDate: row[17] || "",
+          education: row[18] || "",
+          workHistory: row[19] || "",
+          currentCompany: row[20] || "",
+          currentLocation: row[21] || "",
+          matchScore: row[22] || null,
+          screenerDecision: row[23] || null,
+          screenerReport: row[24] || "",
+          clientFeedback: row[25] || "",
+          internalFeedback: row[26] || "",
+          rejectionReason: row[27] || "",
+        }));
 
-      res.json(candidates);
+        res.json(candidates);
     } catch (error: any) {
       console.error("Error fetching candidates:", error);
       res.status(500).json({ error: error.message });
@@ -149,7 +201,7 @@ async function startServer() {
 
       await client.sheets.spreadsheets.values.append({
         spreadsheetId: client.spreadsheetId,
-        range: "Sheet1!A:R",
+        range: "Sheet1!A:AB",
         valueInputOption: "USER_ENTERED",
         requestBody: {
           values: [[
@@ -171,6 +223,16 @@ async function startServer() {
             source,
             priority,
             followUpDate,
+            req.body.education || "",
+            req.body.workHistory || "",
+            req.body.currentCompany || "",
+            req.body.currentLocation || "",
+            req.body.matchScore || "",
+            req.body.screenerDecision || "",
+            req.body.screenerReport || "",
+            req.body.clientFeedback || "",
+            req.body.internalFeedback || "",
+            req.body.rejectionReason || "",
           ]],
         },
       });
@@ -212,7 +274,7 @@ async function startServer() {
 
       await client.sheets.spreadsheets.values.update({
         spreadsheetId: client.spreadsheetId,
-        range: `Sheet1!A${rowId}:R${rowId}`,
+        range: `Sheet1!A${rowId}:AB${rowId}`,
         valueInputOption: "USER_ENTERED",
         requestBody: {
           values: [[
@@ -234,6 +296,16 @@ async function startServer() {
             source,
             priority,
             followUpDate,
+            req.body.education || "",
+            req.body.workHistory || "",
+            req.body.currentCompany || "",
+            req.body.currentLocation || "",
+            req.body.matchScore || "",
+            req.body.screenerDecision || "",
+            req.body.screenerReport || "",
+            req.body.clientFeedback || "",
+            req.body.internalFeedback || "",
+            req.body.rejectionReason || "",
           ]],
         },
       });
@@ -241,6 +313,109 @@ async function startServer() {
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error updating candidate:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Initialize Sheets Headers
+  app.post("/api/sheets/init", async (req, res) => {
+    try {
+      const client = getSheetsClient();
+      if (!client) {
+        return res.status(400).json({ error: "Google Sheets integration is not fully configured." });
+      }
+
+      const headers = [
+        "Date", "Client Name", "Skill", "Remarks", "Position ID", 
+        "Candidate Name", "Candidate Phone", "Candidate Email", "Experience", 
+        "Notice Period", "Status", "Comments", "Recruiter Name", "Role Name", 
+        "Stage Updated Date", "Source", "Priority", "Follow Up Date",
+        "Education", "Work History", "Current Company", "Current Location",
+        "Match Score", "Screener Decision", "Screener Report",
+        "Client Feedback", "Internal Feedback", "Rejection Reason"
+      ];
+
+      await client.sheets.spreadsheets.values.update({
+        spreadsheetId: client.spreadsheetId,
+        range: "Sheet1!A1:AB1",
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [headers],
+        },
+      });
+
+      res.json({ success: true, message: "Sheet headers initialized successfully." });
+    } catch (error: any) {
+      console.error("Error initializing headers:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Bulk sync Firestore data to Google Sheets
+  app.post("/api/sheets/sync-all", async (req, res) => {
+    try {
+      const client = getSheetsClient();
+      if (!client) {
+        return res.status(400).json({ error: "Google Sheets integration is not fully configured." });
+      }
+
+      const { candidates } = req.body;
+      if (!Array.isArray(candidates)) {
+        return res.status(400).json({ error: "Invalid candidates data." });
+      }
+
+      const rows = candidates.map(c => [
+        c.date || "",
+        c.clientName || "",
+        c.skill || "",
+        c.remarks || "",
+        c.positionId || "",
+        c.candidateName || "",
+        c.candidatePhone || "",
+        c.candidateEmail || "",
+        c.experience || "",
+        c.noticePeriod || "",
+        c.status || "Submitted",
+        c.comments || "",
+        c.recruiterName || "",
+        c.roleName || "",
+        c.stageUpdatedDate || "",
+        c.source || "",
+        c.priority || "Medium",
+        c.followUpDate || "",
+        c.education || "",
+        c.workHistory || "",
+        c.currentCompany || "",
+        c.currentLocation || "",
+        c.matchScore || "",
+        c.screenerDecision || "",
+        c.screenerReport || "",
+        c.clientFeedback || "",
+        c.internalFeedback || "",
+        c.rejectionReason || "",
+      ]);
+
+      // Clear existing data (A2:AB)
+      await client.sheets.spreadsheets.values.clear({
+        spreadsheetId: client.spreadsheetId,
+        range: "Sheet1!A2:AB",
+      });
+
+      // Write new data
+      if (rows.length > 0) {
+        await client.sheets.spreadsheets.values.update({
+          spreadsheetId: client.spreadsheetId,
+          range: `Sheet1!A2:AB${rows.length + 1}`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: {
+            values: rows,
+          },
+        });
+      }
+
+      res.json({ success: true, message: `Successfully synced ${rows.length} candidates to Google Sheets.` });
+    } catch (error: any) {
+      console.error("Error bulk syncing sheets:", error);
       res.status(500).json({ error: error.message });
     }
   });

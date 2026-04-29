@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { collection, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { UserProfile, UserRole } from "../types";
+import { ADMIN_EMAILS } from "../constants";
 import { 
   UserPlus, 
   Shield, 
@@ -111,7 +112,7 @@ export function UserManagement() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">User Management</h1>
-          <p className="text-slate-500">Invite new team members and manage their access rights.</p>
+          <p className="text-slate-500">Invite new team members and manage their access rights. <strong>Note:</strong> Access is strictly restricted to invited users and administrators.</p>
         </div>
       </div>
 
@@ -245,7 +246,14 @@ export function UserManagement() {
                         {user.displayName[0]}
                       </div>
                       <div>
-                        <p className="font-bold text-slate-900">{user.displayName}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-slate-900">{user.displayName}</p>
+                          {ADMIN_EMAILS.some(e => e.toLowerCase() === user.email.toLowerCase()) && (
+                            <span className="text-[10px] font-black px-2 py-0.5 bg-[#002B5B] text-white rounded-md uppercase tracking-wider">
+                              System Admin
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-slate-500 flex items-center gap-1">
                           <Mail className="w-3 h-3" /> {user.email}
                         </p>
@@ -255,21 +263,24 @@ export function UserManagement() {
                     <div className="flex items-center gap-3">
                       <select
                         value={user.role}
+                        disabled={ADMIN_EMAILS.some(e => e.toLowerCase() === user.email.toLowerCase())}
                         onChange={(e) => handleUpdateRole(user.uid, e.target.value as UserRole)}
                         className={cn(
-                          "text-xs font-bold px-4 py-2 rounded-xl border-none outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none cursor-pointer",
+                          "text-xs font-bold px-4 py-2 rounded-xl border-none outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none cursor-pointer disabled:cursor-not-allowed",
                           user.role === "admin" ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-600"
                         )}
                       >
                         <option value="recruiter">Recruiter</option>
                         <option value="admin">Admin</option>
                       </select>
-                      <button
-                        onClick={() => handleDeleteUser(user.uid)}
-                        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
+                      {!ADMIN_EMAILS.some(e => e.toLowerCase() === user.email.toLowerCase()) && (
+                        <button
+                          onClick={() => handleDeleteUser(user.uid)}
+                          className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      )}
                     </div>
                   </motion.div>
                 ))}

@@ -3,12 +3,17 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useAuth } from "../AuthContext";
-import { addCandidate } from "../lib/api";
+import { addCandidate, subscribeToJobs, subscribeToClients } from "../lib/api";
 import { STATUS_OPTIONS, PRIORITY_OPTIONS } from "../constants";
-import { UserPlus, Loader2, CheckCircle, RefreshCw, Briefcase } from "lucide-react";
+import { UserPlus, Loader2, CheckCircle, RefreshCw, Briefcase, FileSearch, AlertTriangle, Edit3, Cpu, Zap, BarChart, ListChecks, Upload } from "lucide-react";
 import { format } from "date-fns";
+import { parseResume, ParsedResume, analyzeAlignment, AlignmentReport } from "../lib/cvParser";
+import { Job, Client } from "../types";
 
 import { motion, AnimatePresence } from "motion/react";
+import { cn } from "../lib/utils";
+
+import { BulkImportView } from "./BulkImportView";
 
 const candidateSchema = z.object({
   roleName: z.string().min(2, "Role name is required"),
@@ -27,38 +32,43 @@ const candidateSchema = z.object({
   noticePeriod: z.string().min(1, "Notice period is required"),
   comments: z.string().optional(),
   resumeUrl: z.string().url("Invalid URL").or(z.literal("")).optional(),
+  // New fields from parser
+  education: z.string().optional(),
+  workHistory: z.string().optional(),
+  currentCompany: z.string().optional(),
+  currentLocation: z.string().optional(),
 });
 
 type CandidateFormData = z.infer<typeof candidateSchema>;
-
-interface ExternalJob {
-  Name: string;
-  Role: string;
-  Location: string;
-}
 
 export function CandidateForm() {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [externalJobs, setExternalJobs] = useState<ExternalJob[]>([]);
-  const [fetchingJobs, setFetchingJobs] = useState(false);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [fetchingData, setFetchingData] = useState(false);
+
+  // Parsing state
+  const [resumeText, setResumeText] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [parseConfidence, setParseConfidence] = useState<number | null>(null);
+
+  // Screening state
+  const [analyzing, setAnalyzing] = useState(false);
+  const [alignmentReport, setAlignmentReport] = useState<AlignmentReport | null>(null);
+
+  const [activeTab, setActiveTab] = useState<"single" | "bulk">("single");
 
   useEffect(() => {
-    const fetchJobs = async () => {
-      setFetchingJobs(true);
-      try {
-        const response = await fetch("/api/external-jobs");
-        if (!response.ok) throw new Error("Failed to fetch via proxy");
-        const data = await response.json();
-        setExternalJobs(data);
-      } catch (error) {
-        console.error("Error fetching external jobs:", error);
-      } finally {
-        setFetchingJobs(false);
-      }
+    setFetchingData(true);
+    const unsubJobs = subscribeToJobs(setJobs);
+    const unsubClients = subscribeToClients(setClients);
+    return () => {
+      unsubJobs();
+      unsubClients();
+      setFetchingData(false);
     };
-    fetchJobs();
   }, []);
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<CandidateFormData>({
@@ -75,13 +85,59 @@ export function CandidateForm() {
 
   useEffect(() => {
     if (selectedPosition) {
-      const job = externalJobs.find(j => j.Name === selectedPosition);
+      const job = jobs.find(j => j.id === selectedPosition);
       if (job) {
-        setValue("roleName", job.Role);
-        setValue("clientName", job.Name);
+        setValue("roleName", job.title);
+        setValue("clientName", job.clientName);
       }
     }
-  }, [selectedPosition, externalJobs, setValue]);
+  }, [selectedPosition, jobs, setValue]);
+
+  const handleParseResume = async () => {
+    if (!resumeText.trim()) return;
+    setParsing(true);
+    setParseConfidence(null);
+    try {
+      const parsed = await parseResume(resumeText);
+      setValue("candidateName", parsed.fullName);
+      setValue("candidateEmail", parsed.email);
+      setValue("candidatePhone", parsed.phone);
+      setValue("skill", parsed.skills.join(", "));
+      setValue("experience", parsed.totalExperience);
+      setValue("education", parsed.education);
+      setValue("workHistory", parsed.workHistory);
+      setValue("currentCompany", parsed.currentCompany);
+      setValue("currentLocation", parsed.currentLocation);
+      setParseConfidence(parsed.confidenceScore);
+    } catch (err) {
+      console.error("Parse error:", err);
+      alert("Failed to parse resume. Please fill manually.");
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const handleRunScreening = async () => {
+    if (!resumeText.trim() || !selectedPosition) {
+      alert("Please enter resume text and select a job first.");
+      return;
+    }
+    const job = jobs.find(j => j.id === selectedPosition);
+    if (!job) return;
+
+    setAnalyzing(true);
+    try {
+      const report = await analyzeAlignment(resumeText, job.description);
+      setAlignmentReport(report);
+      // Auto-set score if available
+      setValue("remarks", `AI Decision: ${report.decision}. Match Score: ${report.matchScore}%. ${report.reasoning}`);
+    } catch (err) {
+      console.error("Screening error:", err);
+      alert("Failed to generate alignment report.");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   const onSubmit = async (data: CandidateFormData) => {
     setLoading(true);
@@ -97,24 +153,18 @@ export function CandidateForm() {
         comments: data.comments || "",
         positionId: data.positionId || "N/A",
         resumeUrl: data.resumeUrl || "",
+        resumeText: resumeText,
+        matchScore: alignmentReport?.matchScore,
+        screenerDecision: alignmentReport?.decision,
+        screenerReport: alignmentReport ? JSON.stringify(alignmentReport) : undefined,
       };
 
-      // 1. Local Sync (Firebase + Optional Google Sheets)
       await addCandidate(candidateData as any);
-
-      // 2. External Sync (Via Proxy to avoid CORS)
-      try {
-        await fetch("/api/external-jobs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(candidateData),
-        });
-      } catch (e) {
-        console.warn("External sync failed, but local sync succeeded:", e);
-      }
-
       setSuccess(true);
       reset();
+      setResumeText("");
+      setParseConfidence(null);
+      setAlignmentReport(null);
       setTimeout(() => setSuccess(false), 3000);
     } catch (error) {
       console.error(error);
@@ -128,23 +178,53 @@ export function CandidateForm() {
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="max-w-4xl mx-auto"
+      className="max-w-5xl mx-auto space-y-6"
     >
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="p-6 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <motion.div 
-              initial={{ rotate: -10 }}
-              animate={{ rotate: 0 }}
-              className="p-2 bg-blue-600 rounded-lg text-white"
-            >
-              <UserPlus className="w-5 h-5" />
-            </motion.div>
-            <div>
-              <h2 className="text-xl font-bold text-slate-900">Add New Candidate</h2>
-              <p className="text-sm text-slate-500">Enter candidate details and sync with Google Sheets</p>
-            </div>
-          </div>
+      {/* Tab Switcher */}
+      <div className="flex bg-slate-100 p-1.5 rounded-2xl w-fit mx-auto mb-8">
+        <button
+          onClick={() => setActiveTab("single")}
+          className={cn(
+            "px-8 py-2.5 rounded-xl font-bold text-sm transition-all flex items-center gap-2",
+            activeTab === "single" ? "bg-white text-[#002B5B] shadow-sm" : "text-slate-500 hover:text-slate-700"
+          )}
+        >
+          <UserPlus className="w-4 h-4" /> Single Entry
+        </button>
+        <button
+          onClick={() => setActiveTab("bulk")}
+          className={cn(
+            "px-8 py-2.5 rounded-xl font-bold text-sm transition-all flex items-center gap-2",
+            activeTab === "bulk" ? "bg-white text-[#002B5B] shadow-sm" : "text-slate-500 hover:text-slate-700"
+          )}
+        >
+          <Upload className="w-4 h-4" /> AI Bulk Import
+        </button>
+      </div>
+
+      <AnimatePresence mode="wait">
+        {activeTab === "single" ? (
+          <motion.div 
+            key="single"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden"
+          >
+            <div className="p-6 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <motion.div 
+                  initial={{ rotate: -10 }}
+                  animate={{ rotate: 0 }}
+                  className="p-2 bg-blue-600 rounded-lg text-white"
+                >
+                  <UserPlus className="w-5 h-5" />
+                </motion.div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Add New Candidate</h2>
+                  <p className="text-sm text-slate-500">Intelligent resume parsing and manual entry</p>
+                </div>
+              </div>
           <AnimatePresence>
             {success && (
               <motion.div 
@@ -154,212 +234,280 @@ export function CandidateForm() {
                 className="flex items-center gap-2 text-emerald-600 font-medium"
               >
                 <CheckCircle className="w-5 h-5" />
-                Candidate Added & Synced!
+                Candidate Processed!
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="p-8 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Parser Side */}
+          <div className="lg:col-span-1 space-y-4">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <FileSearch className="w-3 h-3" /> Resume Parser
+              </label>
+              {parseConfidence !== null && (
+                <div className={cn(
+                  "text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1",
+                  parseConfidence > 80 ? "bg-emerald-50 text-emerald-600" : 
+                  parseConfidence > 50 ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-600"
+                )}>
+                  {parseConfidence < 60 && <AlertTriangle className="w-3 h-3" />}
+                  Confidence: {parseConfidence}%
+                </div>
+              )}
+            </div>
+            <textarea
+              value={resumeText}
+              onChange={(e) => setResumeText(e.target.value)}
+              placeholder="Paste Resume text here for AI parsing..."
+              className="w-full h-[500px] p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm resize-none bg-slate-50 font-mono"
+            />
+            <button
+              type="button"
+              onClick={handleParseResume}
+              disabled={parsing || !resumeText.trim()}
+              className="w-full py-3 bg-[#002B5B] text-white rounded-xl font-bold hover:bg-blue-900 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {parsing ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
+              {parsing ? "Parsing CV..." : "Auto-Fill Form"}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleRunScreening}
+              disabled={analyzing || !resumeText.trim() || !selectedPosition}
+              className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-emerald-100"
+            >
+              {analyzing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Cpu className="w-5 h-5" />}
+              {analyzing ? "AI Screening..." : "Run AI Match Alignment"}
+            </button>
+
+            {alignmentReport && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="p-5 rounded-2xl bg-white border border-emerald-100 shadow-xl shadow-emerald-50 space-y-4"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Screener Report</span>
+                  <div className="flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-full">
+                    <Zap className="w-3 h-3 text-amber-500 fill-amber-500" />
+                    <span className="text-[10px] font-bold text-emerald-700">{alignmentReport.matchScore}% Score</span>
+                  </div>
+                </div>
+
+                <div className={cn(
+                  "p-3 rounded-xl text-center font-black text-sm uppercase tracking-wider",
+                  alignmentReport.decision === "Strong Hire" ? "bg-emerald-500 text-white" :
+                  alignmentReport.decision === "Shortlist" ? "bg-amber-500 text-white" : "bg-red-500 text-white"
+                )}>
+                  {alignmentReport.decision}
+                </div>
+
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Skill Gap Analysis</p>
+                    <p className="text-xs text-slate-600 leading-relaxed italic">"{alignmentReport.skillsMatch}"</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Tech Questions to Ask</p>
+                    <ul className="space-y-1">
+                      {alignmentReport.interviewQuestions.map((q, i) => (
+                        <li key={i} className="text-[10px] text-slate-500 flex items-start gap-2">
+                          <span className="w-3 h-3 rounded-full bg-slate-100 flex items-center justify-center text-[8px] font-bold shrink-0">{i+1}</span>
+                          {q}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+            {parseConfidence !== null && parseConfidence < 60 && (
+              <p className="text-[10px] text-amber-600 font-medium bg-amber-50 p-2 rounded-lg border border-amber-100 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                Low confidence score. Please review all fields marked with yellow indicator.
+              </p>
+            )}
+          </div>
+
+          {/* Form Side */}
+          <form onSubmit={handleSubmit(onSubmit)} className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Candidate Info */}
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Candidate Details</h3>
+              <h3 className="text-sm font-semibold text-slate-900 border-l-4 border-blue-600 pl-3">Candidate Intelligence</h3>
               
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+              <div className="relative group">
+                <label className="block text-xs font-bold text-slate-500 mb-1">Full Name</label>
                 <input
                   {...register("candidateName")}
-                  className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                  placeholder="John Doe"
+                  className={cn(
+                    "w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all",
+                    parseConfidence !== null && parseConfidence < 70 && "bg-amber-50/30 border-amber-200"
+                  )}
                 />
-                {errors.candidateName && <p className="text-red-500 text-xs mt-1">{errors.candidateName.message}</p>}
+                {errors.candidateName && <p className="text-red-500 text-[10px] mt-1">{errors.candidateName.message}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Email ID</label>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">Email ID</label>
                   <input
                     {...register("candidateEmail")}
-                    className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                    placeholder="john@example.com"
+                    className={cn(
+                      "w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all",
+                      parseConfidence !== null && parseConfidence < 70 && "bg-amber-50/30 border-amber-200"
+                    )}
                   />
-                  {errors.candidateEmail && <p className="text-red-500 text-xs mt-1">{errors.candidateEmail.message}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Contact Number</label>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">Contact Number</label>
                   <input
                     {...register("candidatePhone")}
-                    className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                    placeholder="+1 234 567 890"
+                    className={cn(
+                      "w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all",
+                      parseConfidence !== null && parseConfidence < 70 && "bg-amber-50/30 border-amber-200"
+                    )}
                   />
-                  {errors.candidatePhone && <p className="text-red-500 text-xs mt-1">{errors.candidatePhone.message}</p>}
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Experience</label>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">Experience</label>
                   <input
                     {...register("experience")}
                     className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                    placeholder="e.g. 5 Years"
                   />
-                  {errors.experience && <p className="text-red-500 text-xs mt-1">{errors.experience.message}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Notice Period</label>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">Notice Period</label>
                   <input
                     {...register("noticePeriod")}
                     className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                    placeholder="e.g. 30 Days"
                   />
-                  {errors.noticePeriod && <p className="text-red-500 text-xs mt-1">{errors.noticePeriod.message}</p>}
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Skill Set</label>
+                <label className="block text-xs font-bold text-slate-500 mb-1">Current Company</label>
                 <input
-                  {...register("skill")}
+                  {...register("currentCompany")}
                   className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                  placeholder="React, Node.js, TypeScript"
                 />
-                {errors.skill && <p className="text-red-500 text-xs mt-1">{errors.skill.message}</p>}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">Current Location</label>
+                <input
+                  {...register("currentLocation")}
+                  className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">Education</label>
+                <textarea
+                  {...register("education")}
+                  className="w-full h-16 px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all text-xs"
+                />
               </div>
             </div>
 
-            {/* Role Info */}
+            {/* Position Info */}
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Position & Client</h3>
+              <h3 className="text-sm font-semibold text-slate-900 border-l-4 border-emerald-600 pl-3">Job Alignment</h3>
               
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center justify-between">
-                  Position ID
-                  {fetchingJobs && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
+                <label className="block text-xs font-bold text-slate-500 mb-1 flex items-center justify-between">
+                  Assign to Job
+                  {fetchingData && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
                 </label>
-                <div className="relative">
-                  <input
-                    {...register("positionId")}
-                    list="positions-list"
-                    className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all bg-white"
-                    placeholder="Type or select a position ID..."
-                  />
-                  <datalist id="positions-list">
-                    {externalJobs.map((job, idx) => (
-                      <option key={idx} value={job.Name}>{job.Role} - {job.Name}</option>
-                    ))}
-                  </datalist>
-                </div>
-                <p className="text-[10px] text-slate-400 mt-1">You can enter a custom ID or select from the list.</p>
+                <select
+                  {...register("positionId")}
+                  className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all bg-white"
+                >
+                  <option value="">-- Select Active Job --</option>
+                  {jobs.map(job => (
+                    <option key={job.id} value={job.id}>{job.title} at {job.clientName}</option>
+                  ))}
+                </select>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Role Name</label>
+                <label className="block text-xs font-bold text-slate-500 mb-1">Role Name</label>
                 <input
                   {...register("roleName")}
                   className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                  placeholder="Senior Software Engineer"
                 />
-                {errors.roleName && <p className="text-red-500 text-xs mt-1">{errors.roleName.message}</p>}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Client Name</label>
+                <label className="block text-xs font-bold text-slate-500 mb-1">Client Name</label>
                 <input
                   {...register("clientName")}
                   className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                  placeholder="Tech Corp"
                 />
-                {errors.clientName && <p className="text-red-500 text-xs mt-1">{errors.clientName.message}</p>}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Source</label>
-                <input
-                  {...register("source")}
-                  className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                  placeholder="LinkedIn, Referral, etc."
+                <label className="block text-xs font-bold text-slate-500 mb-1">Skill Set</label>
+                <textarea
+                  {...register("skill")}
+                  className="w-full h-24 px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all text-xs"
                 />
-                {errors.source && <p className="text-red-500 text-xs mt-1">{errors.source.message}</p>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">Status</label>
+                  <select
+                    {...register("status")}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none bg-white text-xs"
+                  >
+                    {STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">Priority</label>
+                  <select
+                    {...register("priority")}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none bg-white text-xs"
+                  >
+                    {PRIORITY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-6 flex justify-end">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  type="submit"
+                  disabled={loading}
+                  className="bg-[#002B5B] text-white font-bold px-10 py-3 rounded-xl transition-all shadow-xl shadow-blue-100 flex items-center gap-2 disabled:opacity-70"
+                >
+                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <UserPlus className="w-5 h-5" />}
+                  Save Candidate
+                </motion.button>
               </div>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
-              <select
-                {...register("status")}
-                className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all bg-white"
-              >
-                {STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
-              <select
-                {...register("priority")}
-                className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all bg-white"
-              >
-                {PRIORITY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Follow-up Date</label>
-              <input
-                type="date"
-                {...register("followUpDate")}
-                className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Resume URL</label>
-              <input
-                {...register("resumeUrl")}
-                className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                placeholder="https://link-to-resume.com"
-              />
-              {errors.resumeUrl && <p className="text-red-500 text-xs mt-1">{errors.resumeUrl.message}</p>}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Remark</label>
-              <textarea
-                {...register("remarks")}
-                rows={2}
-                className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none"
-                placeholder="Short remark..."
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Comments</label>
-              <textarea
-                {...register("comments")}
-                rows={2}
-                className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none"
-                placeholder="Detailed comments..."
-              />
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-slate-100 flex justify-end">
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              type="submit"
-              disabled={loading}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-3 rounded-xl transition-all shadow-lg shadow-blue-200 flex items-center gap-2 disabled:opacity-70"
-            >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Submit & Sync"}
-            </motion.button>
-          </div>
-        </form>
-      </div>
+          </form>
+        </div>
+      </motion.div>
+    ) : (
+          <motion.div
+            key="bulk"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+          >
+            <BulkImportView onComplete={() => setActiveTab("single")} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

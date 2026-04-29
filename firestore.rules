@@ -105,5 +105,15 @@ service cloud.firestore {
       allow update: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid && isValidDailyLead(request.resource.data));
       allow delete: if isAdmin() || (isAuthenticated() && resource.data.recruiterUid == request.auth.uid);
     }
+
+    match /clients/{clientId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /jobs/{jobId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
   }
 }

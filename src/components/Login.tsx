@@ -1,18 +1,33 @@
 import React, { useState } from "react";
 import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import { auth } from "../firebase";
+import { useAuth } from "../AuthContext";
 import { LogIn, Loader2 } from "lucide-react";
+import { ADMIN_EMAILS } from "../constants";
 
 export function Login() {
+  const { error: authError } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const displayError = error || authError;
 
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError("");
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      
+      const email = result.user.email || "";
+      const isAllowed = email.toLowerCase().endsWith("@bullhornconsultants.com") || 
+                        ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
+      
+      if (!isAllowed) {
+        await auth.signOut();
+        setError("Access restricted. Please sign in with your @bullhornconsultants.com email address.");
+        return;
+      }
     } catch (err: any) {
       setError("Failed to sign in with Google. Please try again.");
       console.error(err);
@@ -30,12 +45,17 @@ export function Login() {
           </div>
           <h1 className="text-2xl font-bold text-[#002B5B]">BHC Recruit ATS</h1>
           <p className="text-slate-500 mt-2">Sign in to manage your recruitment pipeline</p>
+          <div className="mt-2 inline-block px-3 py-1 bg-amber-50 rounded-full border border-amber-100">
+            <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest">
+              Authorized domain: bullhornconsultants.com
+            </p>
+          </div>
         </div>
 
         <div className="space-y-6">
-          {error && (
+          {displayError && (
             <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-red-600 text-sm">
-              {error}
+              {displayError}
             </div>
           )}
 

@@ -13,4 +13,4 @@ export const STATUS_OPTIONS: CandidateStatus[] = [
 
 export const PRIORITY_OPTIONS = ["Low", "Medium", "High"] as const;
 
-export const ADMIN_EMAILS = ["admin@recruitflow.com", "sonukrthakur93@gmail.com", "sonu@bullhornconsultants.com"]; // Example admin emails
+export const ADMIN_EMAILS = ["sonu@bullhornconsultants.com", "sonukrthakur93@gmail.com"]; // Authorized BHC admin emails

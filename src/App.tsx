@@ -10,7 +10,6 @@ import { RecruiterTools } from "./components/RecruiterTools";
 import { UserManagement } from "./components/UserManagement";
 import { DailyLeadsForm } from "./components/DailyLeadsForm";
 import { DailyLeadsDashboard } from "./components/DailyLeadsDashboard";
-import { AIRecruitFlow } from "./components/AIRecruitFlow";
 import { ConfigAlert } from "./components/ConfigAlert";
 import { 
   LayoutDashboard, 
@@ -32,14 +31,17 @@ import { auth } from "./firebase";
 import { signOut } from "firebase/auth";
 import { cn } from "./lib/utils";
 
-function Sidebar() {
+import { SheetsSettings } from "./components/SheetsSettings";
+
+function Sidebar({ isHidden }: { isHidden?: boolean }) {
   const { profile } = useAuth();
   const location = useLocation();
   const [isOpen, setIsOpen] = React.useState(false);
 
+  if (isHidden) return null;
+
   const navItems = [
     { label: "Dashboard", path: "/", icon: LayoutDashboard },
-    { label: "AI Recruit Flow", path: "/recruit-flow", icon: Sparkles },
     { label: "Add Candidate", path: "/add", icon: UserPlus },
     { label: "Pipeline", path: "/pipeline", icon: Layout },
     { label: profile?.role === "admin" ? "All Submissions" : "My Submissions", path: "/list", icon: ListTodo },
@@ -51,7 +53,8 @@ function Sidebar() {
       { label: "Daily Leads Log", path: "/leads/add", icon: ClipboardList }
     ] : []),
     ...(profile?.role === "admin" ? [
-      { label: "User Management", path: "/users", icon: Users }
+      { label: "User Management", path: "/users", icon: Users },
+      { label: "Settings", path: "/settings", icon: Settings },
     ] : []),
   ];
 
@@ -67,7 +70,7 @@ function Sidebar() {
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-100 transform transition-transform duration-300 ease-in-out lg:translate-x-0",
+        "fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-100 transform transition-all duration-300 ease-in-out lg:translate-x-0",
         isOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="h-full flex flex-col">
@@ -127,6 +130,7 @@ function Sidebar() {
 
 function AppContent() {
   const { user, profile, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -144,10 +148,9 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-slate-50 lg:pl-64">
       <Sidebar />
-      <main className="p-4 md:p-8 max-w-7xl mx-auto">
+      <main className="p-4 md:p-8 mx-auto max-w-7xl">
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/recruit-flow" element={<AIRecruitFlow />} />
           <Route path="/add" element={<CandidateForm />} />
           <Route path="/pipeline" element={<CandidatePipeline />} />
           <Route path="/list" element={<CandidateList />} />
@@ -155,7 +158,10 @@ function AppContent() {
           <Route path="/leads/add" element={<DailyLeadsForm />} />
           <Route path="/leads/dashboard" element={<DailyLeadsDashboard />} />
           {profile?.role === "admin" && (
-            <Route path="/users" element={<UserManagement />} />
+            <>
+              <Route path="/users" element={<UserManagement />} />
+              <Route path="/settings" element={<SheetsSettings />} />
+            </>
           )}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

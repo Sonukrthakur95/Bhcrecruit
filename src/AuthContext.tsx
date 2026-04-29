@@ -9,34 +9,51 @@ interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
   loading: boolean;
+  error: string | null;
 }
 
-const AuthContext = createContext<AuthContextType>({ user: null, profile: null, loading: true });
+const AuthContext = createContext<AuthContextType>({ user: null, profile: null, loading: true, error: null });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
       if (user) {
+        const email = user.email?.toLowerCase() || "";
         const userDocRef = doc(db, "users", user.uid);
-        const userDoc = await getDoc(userDocRef);
+        const roleDocRef = doc(db, "user_roles", email);
         
+        // Initial permission check
+        const [userDoc, roleDoc] = await Promise.all([
+          getDoc(userDocRef),
+          getDoc(roleDocRef)
+        ]);
+
+        const isAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === email);
+        const isInvited = roleDoc.exists();
+        
+        // strictly enforce access: must be admin OR invited
+        if (!isAdmin && !isInvited) {
+          await auth.signOut();
+          setUser(null);
+          setProfile(null);
+          setLoading(false);
+          setError("Access Denied. You must be invited by an administrator to access this system.");
+          return;
+        }
+
+        setUser(user);
         if (userDoc.exists()) {
           setProfile({ uid: user.uid, ...userDoc.data() } as UserProfile);
         } else {
-          // Check for pre-authorized role
-          const userEmail = user.email?.toLowerCase() || "";
-          const roleDocRef = doc(db, "user_roles", userEmail);
-          const roleDoc = await getDoc(roleDocRef);
-          
           let role: UserRole = "recruiter";
           if (roleDoc.exists()) {
             role = roleDoc.data().role as UserRole;
-          } else if (ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail)) {
+          } else if (isAdmin) {
             role = "admin";
           }
 
@@ -58,7 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading }}>
+    <AuthContext.Provider value={{ user, profile, loading, error }}>
       {children}
     </AuthContext.Provider>
   );

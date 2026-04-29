@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { GoogleGenAI, Type } from "@google/genai";
 import { motion, AnimatePresence } from "motion/react";
+import { GoogleGenAI } from "@google/genai";
+import Markdown from "react-markdown";
 import { 
-  Sparkles, 
   Search, 
   Lightbulb, 
   Target, 
@@ -13,7 +13,12 @@ import {
   CheckCircle2,
   Database,
   FileUp,
-  AlertCircle
+  AlertCircle,
+  Sparkles,
+  FileText,
+  ClipboardCheck,
+  UserCheck,
+  Brain
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useAuth } from "../AuthContext";
@@ -21,14 +26,18 @@ import { importCsvData } from "../lib/importCsv";
 import { addCandidate } from "../lib/api";
 import { format } from "date-fns";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export function RecruiterTools() {
   const { profile } = useAuth();
-  const [jd, setJd] = useState("");
-  const [analysis, setAnalysis] = useState<{ summary: string; focus: string[] } | null>(null);
+  const [activeTab, setActiveTab] = useState<"tips" | "import" | "screener">("screener");
+
+  // Screener state
+  const [jdText, setJdText] = useState("");
+  const [resumeText, setResumeText] = useState("");
+  const [analysis, setAnalysis] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [activeTab, setActiveTab] = useState<"analyzer" | "tips" | "import">("analyzer");
+  const [screenerError, setScreenerError] = useState("");
 
   // CSV Import state
   const [csvText, setCsvText] = useState("");
@@ -37,7 +46,7 @@ export function RecruiterTools() {
   const [error, setError] = useState("");
 
 
-  const handleImport = async () => {
+const handleImport = async () => {
     if (!csvText || !profile) return;
     setImporting(true);
     setImportResult(null);
@@ -54,34 +63,110 @@ export function RecruiterTools() {
     }
   };
 
-  const analyzeJD = async () => {
-    if (!jd.trim()) return;
+  const handleScreening = async () => {
+    if (!jdText.trim() || !resumeText.trim()) {
+      setScreenerError("Please provide both a Job Description and a Candidate Resume.");
+      return;
+    }
+
     setAnalyzing(true);
+    setScreenerError("");
+    setAnalysis(null);
+
     try {
-      const response = await ai.models.generateContent({
+      const response = await ai.models.generateContent({ 
         model: "gemini-3-flash-preview",
-        contents: `Analyze the following Job Description and provide:
-1. A short, clear summary of what exactly this role is (2-3 sentences).
-2. A list of 3-5 key focus areas/skills to look for to get the best relevant candidates.
-
-Format the response as a JSON object with keys "summary" (string) and "focus" (array of strings).
-
-JD:
-${jd}`,
+        contents: `Analyze the following Job Description and Candidate Resume.
+      
+      JOB DESCRIPTION:
+      ${jdText}
+      
+      CANDIDATE RESUME:
+      ${resumeText}
+      
+      Generate the Elite Talent Screener report in Markdown format.`,
         config: {
-          responseMimeType: "application/json",
+          systemInstruction: `You are an Elite Talent Screener, a world-class Talent Acquisition Partner with 20+ years of experience hiring for global tech companies, fintech firms, and investment banks. Your purpose is to analyze a Job Description (JD) and a Candidate Resume with the rigor of both a senior recruiter and a hiring manager.
+
+You perform structured hiring evaluations and produce clear, recruiter-grade assessments that help companies decide whether to hire a candidate.
+
+When a user provides a Job Description and a Resume, follow this structured process:
+
+STEP 1 — JD INTELLIGENCE
+Extract and clearly summarize:
+• Core responsibilities
+• Must-have technical skills
+• Good-to-have skills
+• Required years of experience
+• Domain or industry preference
+• Seniority level
+• Tools and technologies required
+
+STEP 2 — CANDIDATE ANALYSIS
+Evaluate the candidate resume against the JD and assess:
+1. Skills match
+2. Technical depth
+3. Domain relevance
+4. Years of relevant experience
+5. Project complexity
+6. Impact and measurable achievements
+7. Stability of career
+8. Seniority alignment
+9. Red flags or potential hiring risks
+
+STEP 3 — MATCH SCORING
+Score the candidate from 0–10 on:
+• Technical skills match
+• Domain expertise
+• Experience relevance
+• Project experience
+• Overall profile strength
+
+Then calculate an Overall Match Score out of 100.
+
+STEP 4 — KEYWORD ANALYSIS
+Extract the most important keywords from the JD and compare them with the resume.
+Provide:
+• Missing keywords
+• Strong matching keywords
+• Suggested Boolean search keywords recruiters could use to source similar candidates.
+
+STEP 5 — RECRUITER DECISION
+Provide a clear hiring recommendation using one of the following:
+✔ Strong Hire
+✔ Shortlist
+✔ Consider Later
+✖ Reject
+
+STEP 6 — RECRUITER NOTES
+Provide practical insights a recruiter would share with the hiring manager:
+• Why the candidate is strong or weak
+• Interview focus areas
+• Questions to validate skills
+• Expected seniority and compensation level estimate if possible.
+
+Always present the response in a clean structured report using the following sections:
+1. JD Breakdown
+2. Candidate Match Analysis
+3. Skill Match Table
+4. Missing Skills
+5. Keyword Analysis
+6. Recruiter Insights
+7. Interview Questions to Validate Candidate
+8. Final Hiring Recommendation
+
+If the JD or Resume is missing, ask the user to provide both before performing the analysis. Use clear recruiter-style language, concise bullet points, and analytical reasoning similar to internal hiring evaluations used by large tech companies.`
         }
       });
 
-      const result = JSON.parse(response.text || "{}");
-      setAnalysis(result);
-    } catch (error) {
-      console.error("Error analyzing JD:", error);
+      setAnalysis(response.text || "No analysis generated.");
+    } catch (err) {
+      console.error("Screening error:", err);
+      setScreenerError("Failed to perform AI analysis. Please check your API configuration.");
     } finally {
       setAnalyzing(false);
     }
   };
-
 
   const recruitmentTips = [
     {
@@ -118,19 +203,19 @@ ${jd}`,
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Recruiter Intelligence</h1>
-          <p className="text-slate-500">AI-powered tools to help you find and hire the best talent</p>
+          <h1 className="text-2xl font-bold text-slate-900">Recruiter Tools</h1>
+          <p className="text-slate-500">Essential tools to help you manage and hire the best talent</p>
         </div>
         
         <div className="flex bg-slate-100 p-1 rounded-xl w-fit overflow-x-auto">
           <button
-            onClick={() => setActiveTab("analyzer")}
+            onClick={() => setActiveTab("screener")}
             className={cn(
               "px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap",
-              activeTab === "analyzer" ? "bg-white text-[#002B5B] shadow-sm" : "text-slate-500 hover:text-slate-900"
+              activeTab === "screener" ? "bg-white text-[#002B5B] shadow-sm" : "text-slate-500 hover:text-slate-900"
             )}
           >
-            JD Analyzer
+            Elite Screener
           </button>
           <button
             onClick={() => setActiveTab("tips")}
@@ -156,105 +241,100 @@ ${jd}`,
       </div>
 
       <AnimatePresence mode="wait">
-        {activeTab === "analyzer" ? (
+        {activeTab === "screener" ? (
           <motion.div
-            key="analyzer"
+            key="screener"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="grid grid-cols-1 lg:grid-cols-2 gap-8"
+            className="space-y-6"
           >
-            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-5 h-5 text-[#002B5B]" />
-                <h2 className="font-semibold text-slate-800">Job Description Analyzer</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <FileText className="w-3 h-3" /> Job Description
+                </label>
+                <textarea
+                  value={jdText}
+                  onChange={(e) => setJdText(e.target.value)}
+                  placeholder="Paste the Job Description here..."
+                  className="w-full h-80 p-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-[#002B5B] outline-none transition-all text-sm resize-none"
+                />
               </div>
-              <p className="text-sm text-slate-500">
-                Paste the full job description below to get a concise summary and targeted sourcing focus areas.
-              </p>
-              <textarea
-                value={jd}
-                onChange={(e) => setJd(e.target.value)}
-                placeholder="Paste Job Description here..."
-                className="w-full h-80 p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#002B5B] focus:border-transparent outline-none transition-all resize-none text-sm"
-              />
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <UserCheck className="w-3 h-3" /> Candidate Resume
+                </label>
+                <textarea
+                  value={resumeText}
+                  onChange={(e) => setResumeText(e.target.value)}
+                  placeholder="Paste the Candidate Resume text here..."
+                  className="w-full h-80 p-4 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-[#002B5B] outline-none transition-all text-sm resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-center">
               <button
-                onClick={analyzeJD}
-                disabled={analyzing || !jd.trim()}
-                className="w-full py-3 bg-[#002B5B] text-white rounded-xl font-semibold hover:bg-[#001a38] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-100"
+                onClick={handleScreening}
+                disabled={analyzing || !jdText.trim() || !resumeText.trim()}
+                className="group relative px-12 py-4 bg-[#002B5B] text-white rounded-2xl font-black text-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:hover:scale-100 shadow-xl shadow-[#002B5B]/20 overflow-hidden"
               >
-                {analyzing ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-5 h-5" />
-                    Analyze Role
-                  </>
-                )}
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+                <span className="relative flex items-center gap-3">
+                  {analyzing ? (
+                    <>
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Brain className="w-6 h-6" />
+                      Run Elite Screening
+                    </>
+                  )}
+                </span>
               </button>
             </div>
 
-            <div className="space-y-6">
-              {!analysis && !analyzing && (
-                <div className="h-full flex flex-col items-center justify-center text-center p-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                  <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm mb-4">
-                    <BookOpen className="w-8 h-8 text-slate-300" />
+            {screenerError && (
+              <div className="p-4 rounded-xl bg-red-50 border border-red-100 text-red-600 font-medium text-sm text-center">
+                {screenerError}
+              </div>
+            )}
+
+            {analysis && (
+              <motion.div
+                initial={{ opacity: 0, y: 40 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white p-8 md:p-12 rounded-3xl border border-slate-100 shadow-2xl shadow-slate-200/50"
+              >
+                <div className="flex items-center gap-3 mb-8 pb-6 border-b border-slate-100">
+                  <div className="w-12 h-12 bg-[#002B5B] rounded-2xl flex items-center justify-center text-white shadow-lg shadow-[#002B5B]/20">
+                    <ClipboardCheck className="w-6 h-6" />
                   </div>
-                  <h3 className="text-slate-900 font-semibold mb-1">No Analysis Yet</h3>
-                  <p className="text-slate-500 text-sm max-w-xs">
-                    Enter a job description on the left to see AI insights here.
-                  </p>
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900 tracking-tight italic">Elite Talent Assessment Report</h2>
+                    <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Confidential Recruitment Intelligence</p>
+                  </div>
                 </div>
-              )}
 
-              {analyzing && (
-                <div className="h-full flex flex-col items-center justify-center text-center p-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                  <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm mb-4 animate-pulse">
-                    <Sparkles className="w-8 h-8 text-blue-400" />
-                  </div>
-                  <h3 className="text-slate-900 font-semibold mb-1">Analyzing JD...</h3>
-                  <p className="text-slate-500 text-sm">Our AI is extracting the core requirements.</p>
+                <div className="prose prose-slate max-w-none 
+                  prose-headings:text-slate-900 prose-headings:font-black prose-headings:tracking-tight
+                  prose-h1:text-3xl prose-h1:mb-8 prose-h1:pb-4 prose-h1:border-b prose-h1:border-slate-100
+                  prose-h2:text-xl prose-h2:mt-12 prose-h2:mb-6 prose-h2:flex prose-h2:items-center prose-h2:gap-2
+                  prose-p:text-slate-600 prose-p:leading-relaxed prose-p:text-base
+                  prose-li:text-slate-600 prose-li:text-base
+                  prose-strong:text-slate-900 prose-strong:font-bold
+                  prose-table:border prose-table:border-slate-200 prose-table:rounded-xl prose-table:overflow-hidden
+                  prose-th:bg-slate-50 prose-th:px-4 prose-th:py-3 prose-th:text-xs prose-th:font-black prose-th:uppercase prose-th:tracking-widest
+                  prose-td:px-4 prose-td:py-3 prose-td:text-sm prose-td:border-t prose-td:border-slate-100
+                  prose-blockquote:border-l-4 prose-blockquote:border-[#002B5B] prose-blockquote:bg-slate-50 prose-blockquote:px-6 prose-blockquote:py-2 prose-blockquote:rounded-r-xl prose-blockquote:italic
+                ">
+                  <Markdown>{analysis}</Markdown>
                 </div>
-              )}
-
-              {analysis && !analyzing && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="space-y-6"
-                >
-                  <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Lightbulb className="w-5 h-5 text-amber-500" />
-                      <h3 className="font-semibold text-slate-800">Role Summary</h3>
-                    </div>
-                    <p className="text-slate-600 leading-relaxed text-sm">
-                      {analysis.summary}
-                    </p>
-                  </div>
-
-                  <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Target className="w-5 h-5 text-emerald-500" />
-                      <h3 className="font-semibold text-slate-800">Sourcing Focus Areas</h3>
-                    </div>
-                    <div className="space-y-3">
-                      {analysis.focus.map((item, index) => (
-                        <div key={index} className="flex items-start gap-3 p-3 rounded-xl bg-emerald-50 border border-emerald-100">
-                          <div className="mt-1">
-                            <ChevronRight className="w-4 h-4 text-emerald-600" />
-                          </div>
-                          <span className="text-sm text-emerald-900 font-medium">{item}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </div>
+              </motion.div>
+            )}
           </motion.div>
         ) : activeTab === "tips" ? (
           <motion.div

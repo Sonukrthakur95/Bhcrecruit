@@ -25,7 +25,6 @@ import {
 } from "recharts";
 import { differenceInDays, parseISO } from "date-fns";
 import confetti from "canvas-confetti";
-import { AdminAISearch } from "./AdminAISearch";
 import { ConfigAlert } from "./ConfigAlert";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -138,42 +137,6 @@ export function Dashboard() {
       <Greeting />
       <ConfigAlert />
       
-      <AnimatePresence>
-        {showCelebration && (
-          <motion.div
-            initial={{ opacity: 0, y: -100, scale: 0.5 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -100, scale: 0.5 }}
-            className="fixed top-8 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-4 bg-white px-6 py-4 rounded-2xl shadow-2xl border-2 border-blue-500"
-          >
-            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center text-2xl animate-bounce">
-              🍄
-            </div>
-            <div>
-              <p className="text-xs font-bold text-blue-600 uppercase tracking-widest">Level Up!</p>
-              <p className="text-lg font-black text-slate-900">New Candidate Submitted!</p>
-            </div>
-            <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center text-2xl animate-pulse">
-              ⭐
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            {profile?.role === "admin" ? "Admin Overview" : "My Performance"}
-          </h1>
-          <p className="text-slate-500">Real-time recruitment metrics and insights</p>
-        </div>
-      </div>
-
-      {/* AI Search for Admins */}
-      {profile?.role === "admin" && (
-        <AdminAISearch candidates={candidates} />
-      )}
-
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
